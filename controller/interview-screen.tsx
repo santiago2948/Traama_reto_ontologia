@@ -10,6 +10,7 @@ export function InterviewScreen() {
     <ChatShell
       messages={interview.messages}
       requirement={interview.requirement}
+      version={interview.version}
       confirmed={interview.confirmed}
       draft={interview.draft}
       canSend={interview.canSend}

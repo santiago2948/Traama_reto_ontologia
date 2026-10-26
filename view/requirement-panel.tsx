@@ -3,12 +3,14 @@ import type { Requirement } from "@/model/requirement"
 
 type RequirementPanelProps = {
   requirement: Requirement
+  version: number
   confirmed: boolean
   onToggleConfirmed: () => void
 }
 
 export function RequirementPanel({
   requirement,
+  version,
   confirmed,
   onToggleConfirmed,
 }: RequirementPanelProps) {
@@ -20,7 +22,7 @@ export function RequirementPanel({
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="text-sm font-semibold">Requerimiento</h2>
           <p className="text-xs font-medium text-muted-foreground">
-            Versión {requirement.version}
+            Versión {version}
           </p>
         </div>
       </div>
@@ -65,7 +67,7 @@ export function RequirementPanel({
           <h3 className="mt-4 text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Decisión
           </h3>
-          <p className="mt-2 text-sm">{requirement.decision}</p>
+          <p className="mt-2 text-sm">{requirement.decision_objetivo}</p>
         </section>
 
         <section className="rounded-xl bg-card p-4 ring-1 ring-foreground/10">
@@ -77,13 +79,13 @@ export function RequirementPanel({
               <dt className="text-xs font-medium text-muted-foreground">
                 Período
               </dt>
-              <dd>{requirement.periodo}</dd>
+              <dd>{requirement.alcance.periodo}</dd>
             </div>
             <div>
               <dt className="text-xs font-medium text-muted-foreground">
                 Unidades
               </dt>
-              <dd>{requirement.unidades.join(", ")}</dd>
+              <dd>{requirement.alcance.unidades.join(", ")}</dd>
             </div>
           </dl>
         </section>
@@ -92,9 +94,9 @@ export function RequirementPanel({
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Esquema
           </h3>
-          <p className="mt-2 text-sm">{requirement.clases.join(" · ")}</p>
+          <p className="mt-2 text-sm">{requirement.esquema.clases.join(" · ")}</p>
           <ul className="mt-3 space-y-2">
-            {requirement.relaciones.map((relation) => (
+            {requirement.esquema.relaciones.map((relation) => (
               <li
                 key={`${relation.sujeto}-${relation.predicado}-${relation.objeto}`}
                 className="rounded-md border bg-muted p-2 text-sm break-words"
@@ -112,7 +114,7 @@ export function RequirementPanel({
             Reglas candidatas
           </h3>
           <ul className="mt-3 space-y-3">
-            {requirement.reglas.map((rule) => (
+            {requirement.reglas_candidatas.map((rule) => (
               <li key={rule.id} className="text-sm">
                 <p className="font-medium">{rule.id}</p>
                 <p className="mt-1">{rule.enunciado}</p>
@@ -125,7 +127,7 @@ export function RequirementPanel({
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Fuentes requeridas
           </h3>
-          {requirement.fuentes.map((source) => (
+          {requirement.fuentes_requeridas.map((source) => (
             <article
               key={source.nombre}
               className="rounded-xl bg-card p-4 ring-1 ring-foreground/10"
@@ -139,7 +141,7 @@ export function RequirementPanel({
               <p className="mt-3 text-xs font-medium text-muted-foreground">
                 Columnas mínimas
               </p>
-              <p className="mt-1 text-sm break-words">{source.columnas.join(", ")}</p>
+              <p className="mt-1 text-sm break-words">{source.columnas_minimas.join(", ")}</p>
               <p className="mt-3 text-xs font-medium text-muted-foreground">
                 Justifica
               </p>
@@ -152,13 +154,13 @@ export function RequirementPanel({
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
             Preguntas abiertas
           </h3>
-          {requirement.preguntasAbiertas.length === 0 ? (
+          {requirement.preguntas_abiertas.length === 0 ? (
             <p className="mt-2 text-sm font-normal text-muted-foreground">
               Ninguna. El pedido ya se puede confirmar.
             </p>
           ) : (
             <ul className="mt-2 space-y-2 text-sm font-medium">
-              {requirement.preguntasAbiertas.map((question) => (
+              {requirement.preguntas_abiertas.map((question) => (
                 <li key={question}>{question}</li>
               ))}
             </ul>

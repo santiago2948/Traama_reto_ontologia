@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import {
-  appendAgentMessage,
   appendUserMessage,
+  applyAgentTurn,
   createInterview,
   isSendable,
   toggleConfirmation,
 } from "@/model/interview"
+import type { Requirement } from "@/model/requirement"
 
 export function useInterviewController() {
   const [interview, setInterview] = useState(createInterview)
@@ -37,12 +38,16 @@ export function useInterviewController() {
           requirement: next.requirement,
         }),
       })
-      const payload = (await response.json()) as { message?: string; error?: string }
+      const payload = (await response.json()) as {
+        message?: string
+        error?: string
+        requirement?: Requirement | null
+      }
       if (!response.ok || !payload.message) {
         setError(payload.error ?? "No se pudo consultar al modelo. Tu mensaje sigue en el hilo.")
         return
       }
-      setInterview((current) => appendAgentMessage(current, payload.message ?? ""))
+      setInterview((current) => applyAgentTurn(current, payload.message ?? "", payload.requirement ?? null))
     } catch {
       setError("No se pudo consultar al modelo. Tu mensaje sigue en el hilo.")
     } finally {
@@ -57,6 +62,7 @@ export function useInterviewController() {
   return {
     messages: interview.messages,
     requirement: interview.requirement,
+    version: interview.version,
     confirmed: interview.confirmed,
     draft,
     setDraft,

@@ -20,14 +20,40 @@ export class OpenAiLlm implements LlmClient {
           { role: "system", content: input.system },
           ...input.messages,
         ],
+        tools: input.tools?.map((tool) => ({
+          type: "function" as const,
+          function: {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: true,
+          },
+        })),
+        tool_choice: input.tools?.length ? "auto" : undefined,
       },
       { timeout: 25_000 },
     )
-    const message = response.choices[0]?.message?.content?.trim()
-    if (!message) {
-      throw new Error("Respuesta vacía")
+
+    const message = response.choices[0]?.message
+    if (!message) throw new Error("Respuesta vacía")
+
+    const call = message.tool_calls?.find((item) => item.type === "function")
+    const text = message.content?.trim() ?? ""
+    if (!text && !call) throw new Error("Respuesta vacía")
+
+    let parsed: unknown = null
+    if (call?.type === "function") {
+      try {
+        parsed = JSON.parse(call.function.arguments)
+      } catch {
+        parsed = null
+      }
     }
-    return { message }
+
+    return {
+      message: text,
+      toolCall: call?.type === "function" ? { name: call.function.name, arguments: parsed } : null,
+    }
   }
 }
 

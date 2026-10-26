@@ -11,6 +11,7 @@ import { Textarea } from "@/view/ui/textarea"
 type ChatShellProps = {
   messages: ChatMessage[]
   requirement: Requirement
+  version: number
   confirmed: boolean
   draft: string
   canSend: boolean
@@ -24,6 +25,7 @@ type ChatShellProps = {
 export function ChatShell({
   messages,
   requirement,
+  version,
   confirmed,
   draft,
   canSend,
@@ -109,6 +111,7 @@ export function ChatShell({
 
         <RequirementPanel
           requirement={requirement}
+          version={version}
           confirmed={confirmed}
           onToggleConfirmed={onToggleConfirmed}
         />

@@ -13,6 +13,7 @@ export type ChatMessage = {
 export type InterviewState = {
   messages: ChatMessage[]
   requirement: Requirement
+  version: number
   confirmed: boolean
   phase: InterviewPhase
 }
@@ -44,8 +45,40 @@ export function createInterview(): InterviewState {
   return {
     messages: sampleMessages,
     requirement: sampleRequirement,
+    version: 2,
     confirmed: false,
     phase: "confirmar",
+  }
+}
+
+export function resolvePhase(phase: InterviewPhase, requirement: Requirement | null): InterviewPhase {
+  if (!requirement) return phase
+  const hasSchema = requirement.esquema.clases.length > 0
+  const hasSources = requirement.fuentes_requeridas.length > 0
+  if (phase === "delimitar" && hasSchema) {
+    if (!hasSources) return "proponer"
+    return requirement.completitud === "suficiente_para_confirmar" ? "confirmar" : "pedir"
+  }
+  if (phase === "proponer" && hasSources) {
+    return requirement.completitud === "suficiente_para_confirmar" ? "confirmar" : "pedir"
+  }
+  if (phase === "pedir" && requirement.completitud === "suficiente_para_confirmar") return "confirmar"
+  return phase
+}
+
+export function applyAgentTurn(
+  state: InterviewState,
+  message: string,
+  requirement: Requirement | null,
+): InterviewState {
+  const withMessage = appendAgentMessage(state, message)
+  if (!requirement) return withMessage
+  return {
+    ...withMessage,
+    requirement,
+    version: state.version + 1,
+    confirmed: false,
+    phase: resolvePhase(state.phase, requirement),
   }
 }
 

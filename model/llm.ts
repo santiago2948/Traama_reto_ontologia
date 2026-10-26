@@ -3,13 +3,26 @@ export type LlmMessage = {
   content: string
 }
 
+export type LlmTool = {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+}
+
+export type LlmToolCall = {
+  name: string
+  arguments: unknown
+}
+
 export type LlmTurnInput = {
   system: string
   messages: LlmMessage[]
+  tools?: LlmTool[]
 }
 
 export type LlmTurnResult = {
   message: string
+  toolCall: LlmToolCall | null
 }
 
 export interface LlmClient {

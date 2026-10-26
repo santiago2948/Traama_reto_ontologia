@@ -4,6 +4,7 @@ import type { InterviewPhase } from "@/model/interview"
 import type { LlmMessage } from "@/model/llm"
 import { buildSystemPrompt } from "@/model/prompt"
 import type { Requirement } from "@/model/requirement"
+import { registrarRequerimientoTool, validateRequirement } from "@/model/requirement-schema"
 import OpenAI from "openai"
 
 const phases: InterviewPhase[] = ["delimitar", "proponer", "pedir", "confirmar"]
@@ -44,6 +45,12 @@ function toLlmMessages(messages: IncomingMessage[]): LlmMessage[] {
   }))
 }
 
+function readRequirement(value: unknown): Requirement | null {
+  if (!value || typeof value !== "object") return null
+  const validated = validateRequirement(value)
+  return validated.ok ? validated.requirement : null
+}
+
 export async function POST(request: Request) {
   await connection()
 
@@ -60,10 +67,7 @@ export async function POST(request: Request) {
 
   const phase = "phase" in body ? body.phase : undefined
   const messages = "messages" in body ? readMessages(body.messages) : null
-  const requirement =
-    "requirement" in body && body.requirement && typeof body.requirement === "object"
-      ? (body.requirement as Requirement)
-      : null
+  const requirement = "requirement" in body ? readRequirement(body.requirement) : null
 
   if (!isPhase(phase) || !messages) {
     return Response.json({ error: "El pedido no es válido." }, { status: 400 })
@@ -71,11 +75,39 @@ export async function POST(request: Request) {
 
   try {
     const client = createLlmClient()
-    const result = await client.complete({
-      system: buildSystemPrompt(phase, requirement),
-      messages: toLlmMessages(messages),
+    const system = buildSystemPrompt(phase, requirement)
+    const llmMessages = toLlmMessages(messages)
+    const first = await client.complete({
+      system,
+      messages: llmMessages,
+      tools: [registrarRequerimientoTool],
     })
-    return Response.json({ message: result.message })
+
+    const accepted = acceptToolCall(first.toolCall)
+    if (accepted.requirement || !first.toolCall) {
+      return Response.json({
+        message: first.message || "Dejé el requerimiento en el panel para revisarlo.",
+        requirement: accepted.requirement,
+      })
+    }
+
+    const repair = await client.complete({
+      system: `${system}\n\nEl registrar_requerimiento anterior no se mostró porque no validó: ${accepted.errors.join(" ")} Pedile a la persona solo lo que falta. No inventes el dato ni afirmes un resultado.`,
+      messages: [
+        ...llmMessages,
+        ...(first.message ? [{ role: "assistant" as const, content: first.message }] : []),
+      ],
+      tools: [registrarRequerimientoTool],
+    })
+    const retried = acceptToolCall(repair.toolCall)
+
+    return Response.json({
+      message:
+        repair.message ||
+        first.message ||
+        `No pude mostrar el requerimiento. ${accepted.errors[0]}`,
+      requirement: retried.requirement,
+    })
   } catch (error) {
     const status = error instanceof OpenAI.APIError ? error.status : undefined
     console.error("openai_failed", status ?? "unknown")
@@ -89,4 +121,13 @@ export async function POST(request: Request) {
       { status: missingKey ? 500 : 502 },
     )
   }
+}
+
+function acceptToolCall(toolCall: { name: string; arguments: unknown } | null) {
+  if (!toolCall || toolCall.name !== "registrar_requerimiento") {
+    return { requirement: null, errors: [] as string[] }
+  }
+  const validated = validateRequirement(toolCall.arguments)
+  if (!validated.ok) return { requirement: null, errors: validated.errors }
+  return { requirement: validated.requirement, errors: [] as string[] }
 }
