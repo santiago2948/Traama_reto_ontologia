@@ -1,0 +1,118 @@
+"use client"
+
+import { useEffect, useId, useRef } from "react"
+import type { ChatMessage } from "@/model/interview"
+import type { Requirement } from "@/model/requirement"
+import { RequirementPanel } from "@/view/requirement-panel"
+import { ThemeToggle } from "@/view/theme-toggle"
+import { Button } from "@/view/ui/button"
+import { Textarea } from "@/view/ui/textarea"
+
+type ChatShellProps = {
+  messages: ChatMessage[]
+  requirement: Requirement
+  confirmed: boolean
+  draft: string
+  canSend: boolean
+  pending: boolean
+  error: string | null
+  onDraftChange: (value: string) => void
+  onSend: () => void
+  onToggleConfirmed: () => void
+}
+
+export function ChatShell({
+  messages,
+  requirement,
+  confirmed,
+  draft,
+  canSend,
+  pending,
+  error,
+  onDraftChange,
+  onSend,
+  onToggleConfirmed,
+}: ChatShellProps) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const fieldId = useId()
+
+  useEffect(() => {
+    const list = listRef.current
+    if (!list) return
+    list.scrollTop = list.scrollHeight
+  }, [messages])
+
+  return (
+    <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden bg-background">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b px-6">
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold">Trama</h1>
+          <p className="text-xs tracking-wide text-muted-foreground uppercase">
+            Entrevista
+          </p>
+        </div>
+        <ThemeToggle />
+      </header>
+
+      <div className="grid min-h-0 w-full min-w-0 flex-1 grid-rows-[minmax(0,1.15fr)_minmax(0,0.85fr)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 lg:divide-x">
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
+          <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            {messages.map((message) => (
+              <article key={message.id} className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {message.role === "agent" ? "Agente" : "Vos"}
+                </p>
+                <div
+                  className={
+                    message.role === "agent"
+                      ? "w-full rounded-md border bg-muted p-2 text-sm"
+                      : "w-full rounded-md border border-foreground/20 p-2 text-sm"
+                  }
+                >
+                  {message.text}
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <form
+            className="flex shrink-0 items-end gap-2 border-t px-6 py-4"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onSend()
+            }}
+          >
+            <label htmlFor={fieldId} className="sr-only">
+              Mensaje
+            </label>
+            <Textarea
+              id={fieldId}
+              value={draft}
+              placeholder="Escribí la necesidad o un ajuste"
+              className="max-h-40 min-h-16 flex-1 rounded-lg"
+              onChange={(event) => onDraftChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault()
+                  onSend()
+                }
+              }}
+            />
+            <Button type="submit" size="lg" disabled={!canSend}>
+              {pending ? "Enviando" : "Enviar"}
+            </Button>
+          </form>
+          {error ? (
+            <p className="border-t border-dashed px-6 py-3 text-sm">{error}</p>
+          ) : null}
+        </section>
+
+        <RequirementPanel
+          requirement={requirement}
+          confirmed={confirmed}
+          onToggleConfirmed={onToggleConfirmed}
+        />
+      </div>
+    </div>
+  )
+}
