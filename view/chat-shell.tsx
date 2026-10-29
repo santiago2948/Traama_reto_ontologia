@@ -8,9 +8,21 @@ import { ThemeToggle } from "@/view/theme-toggle"
 import { Button } from "@/view/ui/button"
 import { Textarea } from "@/view/ui/textarea"
 
+function formatAgentText(text: string) {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+(?=\d{1,2}[.)] )/g, "\n")
+    .replace(
+      /([^\n])\n(?=(?:Requerimiento|Necesidad|Decisión|Alcance|Clases|Reglas candidatas|Fuentes requeridas|Preguntas abiertas)\b)/g,
+      "$1\n\n",
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
 type ChatShellProps = {
   messages: ChatMessage[]
-  requirement: Requirement
+  requirement: Requirement | null
   version: number
   confirmed: boolean
   draft: string
@@ -36,6 +48,7 @@ export function ChatShell({
   onToggleConfirmed,
 }: ChatShellProps) {
   const listRef = useRef<HTMLDivElement>(null)
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
   const fieldId = useId()
 
   useEffect(() => {
@@ -59,6 +72,12 @@ export function ChatShell({
       <div className="grid min-h-0 w-full min-w-0 flex-1 grid-rows-[minmax(0,1.15fr)_minmax(0,0.85fr)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 lg:divide-x">
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
           <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
+            {messages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Contá la necesidad de la empresa. El agente delimita, propone el
+                modelo y lista los datos mínimos que harían falta.
+              </p>
+            ) : null}
             {messages.map((message) => (
               <article key={message.id} className="space-y-1">
                 <p className="text-xs font-medium text-muted-foreground">
@@ -67,11 +86,11 @@ export function ChatShell({
                 <div
                   className={
                     message.role === "agent"
-                      ? "w-full rounded-md border bg-muted p-2 text-sm"
-                      : "w-full rounded-md border border-foreground/20 p-2 text-sm"
+                      ? "w-full rounded-md border bg-muted p-2 text-sm whitespace-pre-wrap"
+                      : "w-full rounded-md border border-foreground/20 p-2 text-sm whitespace-pre-wrap"
                   }
                 >
-                  {message.text}
+                  {message.role === "agent" ? formatAgentText(message.text) : message.text}
                 </div>
               </article>
             ))}
@@ -88,9 +107,14 @@ export function ChatShell({
               Mensaje
             </label>
             <Textarea
+              ref={fieldRef}
               id={fieldId}
               value={draft}
-              placeholder="Escribí la necesidad o un ajuste"
+              placeholder={
+                messages.length === 0
+                  ? "Escribí la necesidad de la empresa"
+                  : "Escribí un ajuste o la respuesta"
+              }
               className="max-h-40 min-h-16 flex-1 rounded-lg"
               onChange={(event) => onDraftChange(event.target.value)}
               onKeyDown={(event) => {
@@ -114,6 +138,10 @@ export function ChatShell({
           version={version}
           confirmed={confirmed}
           onToggleConfirmed={onToggleConfirmed}
+          onAdjust={() => {
+            if (confirmed) onToggleConfirmed()
+            fieldRef.current?.focus()
+          }}
         />
       </div>
     </div>
