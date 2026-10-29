@@ -11,22 +11,35 @@ const sourceLabels: Record<SourceType, string> = {
 }
 
 function panelStatus(requirement: Requirement, confirmed: boolean) {
+  const openQuestions = Array.isArray(requirement.preguntas_abiertas)
+    ? requirement.preguntas_abiertas
+    : []
+
   if (confirmed) {
     return {
       badge: "Confirmado",
       footer: "El requerimiento quedó confirmado. Descargá el JSON o pedí un ajuste.",
     }
   }
-  if (requirement.completitud === "suficiente_para_confirmar") {
-    return {
-      badge: "Esperando confirmación",
-      footer: "Revisá el modelo y apretá Confirmar.",
-    }
-  }
   if (requirement.fuentes_requeridas.length === 0) {
     return {
       badge: "Revisá la propuesta",
       footer: "Si las clases están bien, respondé en el chat.",
+    }
+  }
+  if (openQuestions.length > 0) {
+    return {
+      badge: "Hay preguntas abiertas",
+      footer:
+        requirement.completitud === "suficiente_para_confirmar"
+          ? "Podés confirmar igual o aclarar las preguntas abiertas en el chat."
+          : "Respondé las preguntas abiertas en el chat o pedí un ajuste.",
+    }
+  }
+  if (requirement.completitud === "suficiente_para_confirmar") {
+    return {
+      badge: "Esperando confirmación",
+      footer: "Revisá el modelo y apretá Confirmar.",
     }
   }
   return {
@@ -139,12 +152,13 @@ export function RequirementPanel({
           </section>
         ) : null}
 
-        {requirement.preguntas_abiertas.length > 0 ? (
+        {Array.isArray(requirement.preguntas_abiertas) &&
+        requirement.preguntas_abiertas.length > 0 ? (
           <section>
             <h3 className="text-sm font-medium">Preguntas abiertas</h3>
             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
-              {requirement.preguntas_abiertas.map((question) => (
-                <li key={question}>{question}</li>
+              {requirement.preguntas_abiertas.map((question, index) => (
+                <li key={`${index}-${question.slice(0, 48)}`}>{question}</li>
               ))}
             </ul>
           </section>

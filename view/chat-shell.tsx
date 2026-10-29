@@ -13,7 +13,7 @@ function formatAgentText(text: string) {
     .replace(/\r\n/g, "\n")
     .replace(/[ \t]+(?=\d{1,2}[.)] )/g, "\n")
     .replace(
-      /([^\n])\n(?=(?:Requerimiento|Necesidad|Decisión|Alcance|Clases|Reglas candidatas|Fuentes requeridas|Preguntas abiertas)\b)/g,
+      /([^\n])\n(?=(?:Requerimiento|Necesidad|Decisión|Alcance|Clases|Reglas candidatas|Fuentes requeridas|Preguntas abiertas)\b)/gi,
       "$1\n\n",
     )
     .replace(/\n{3,}/g, "\n\n")
@@ -51,11 +51,13 @@ export function ChatShell({
   const fieldRef = useRef<HTMLTextAreaElement>(null)
   const fieldId = useId()
 
+  const scrollKey = `${messages.length}:${messages.at(-1)?.id ?? ""}:${pending ? "1" : "0"}`
+
   useEffect(() => {
     const list = listRef.current
     if (!list) return
     list.scrollTop = list.scrollHeight
-  }, [messages])
+  }, [scrollKey])
 
   return (
     <div className="flex h-dvh w-full max-w-full flex-col overflow-hidden bg-background">
@@ -72,7 +74,7 @@ export function ChatShell({
       <div className="grid min-h-0 w-full min-w-0 flex-1 grid-rows-[minmax(0,1.15fr)_minmax(0,0.85fr)] overflow-hidden lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 lg:divide-x">
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-sidebar">
           <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !pending ? (
               <p className="text-sm text-muted-foreground">
                 Contá la necesidad de la empresa. El agente delimita, propone el
                 modelo y lista los datos mínimos que harían falta.
@@ -94,6 +96,16 @@ export function ChatShell({
                 </div>
               </article>
             ))}
+            {pending ? (
+              <article className="space-y-1" aria-live="polite" aria-label="El agente está escribiendo">
+                <p className="text-xs font-medium text-muted-foreground">Agente</p>
+                <div className="flex w-full items-center gap-1.5 rounded-md border bg-muted p-3">
+                  <span className="trama-typing-dot size-1.5 rounded-full bg-foreground/70" />
+                  <span className="trama-typing-dot size-1.5 rounded-full bg-foreground/70" />
+                  <span className="trama-typing-dot size-1.5 rounded-full bg-foreground/70" />
+                </div>
+              </article>
+            ) : null}
           </div>
 
           <form

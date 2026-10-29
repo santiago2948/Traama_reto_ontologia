@@ -34,7 +34,7 @@ Si el usuario corrige el esquema, se queda aquí y esa corrección es una versi�
 
 El agente no pregunta qué archivos tiene la empresa. A partir del esquema y las reglas aceptadas, **deduce y lista** las fuentes y columnas mínimas que harían falta para cargar el grafo y verificar esas hipótesis. Cada fuente es `excel`, `csv`, `pdf` o `crm-export`. Cada fuente y cada columna justifican al menos una clase, una relación o una regla. Lo que no se puede justificar no se pide.
 
-Los nombres de archivo y columnas salen del vocabulario del negocio (turnos, nómina, pedidos, etc.), no de un catálogo fijo en código. Si el usuario corrige un nombre o un formato, se registra otra versión. Una ambigüedad que cambia las columnas (motivo en categorías fijas o texto libre) va a `preguntas_abiertas`.
+Los nombres de archivo y columnas salen del vocabulario del negocio (turnos, nómina, pedidos, etc.), no de un catálogo fijo en código. Si el usuario corrige un nombre o un formato, se registra otra versión. Una ambigüedad que cambia las columnas (motivo en categorías fijas o texto libre), el período/unidad poco claros o el formato de fuente van a `preguntas_abiertas`. Ese campo siempre es un array (puede quedar `[]`); el servidor lo normaliza para que un valor raro del modelo no tumbe el turno. Las preguntas abiertas se muestran en el panel y en el resumen de fase, y no bloquean por sí solas la confirmación si el pedido ya es suficiente.
 
 En el mismo turno en que se entra a pedir, el agente llama a `registrar_requerimiento` con esas fuentes y deja el pedido en el panel para revisión.
 
