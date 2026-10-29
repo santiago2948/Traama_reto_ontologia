@@ -6,9 +6,9 @@ El servidor decide la fase. El modelo llena el contenido y, cuando el contrato y
 
 ## Cuándo pregunta, propone y se detiene
 
-**Pregunta** cuando falta un dato que cambia el pedido, y hace una o dos preguntas por turno. Usa las palabras del usuario. Si el usuario ya lo dijo, no lo vuelve a pedir. Si no lo sabe, eso queda en `preguntas_abiertas` y se sigue.
+**Pregunta** solo para delimitar la necesidad (decisión, entidades, período, sospecha). Una o dos preguntas por turno. Usa las palabras del usuario. Si ya lo dijo, no lo vuelve a pedir. Si no lo sabe, eso queda en `preguntas_abiertas` y se sigue. No pregunta por el inventario de archivos de la empresa.
 
-**Propone** cuando la fase ya tiene lo mínimo para mostrar un borrador. La propuesta es el requerimiento del panel, no un párrafo suelto. Las reglas se escriben como hipótesis ("si pasa esto, asociar la salida a rotación"). El agente no afirma porcentajes, causas ni hallazgos. Una cifra que trae el usuario se conserva como formulación suya.
+**Propone** cuando la fase ya tiene lo mínimo para mostrar un borrador. La propuesta es el requerimiento del panel, no un párrafo suelto: primero clases/relaciones/reglas; después, las fuentes y columnas mínimas derivadas de ese modelo. El resumen estructurado en el chat sale solo al **cambiar de fase** o en la **confirmación final**; el resto de turnos son preguntas o frases cortas, sin mini resumen redundante. Las reglas se escriben como hipótesis ("si pasa esto, asociar la salida a rotación"). El agente no afirma porcentajes, causas ni hallazgos. Una cifra que trae el usuario se conserva como formulación suya.
 
 **Se detiene** cuando el usuario confirma. Confirmar no llama al modelo: fija la versión visible. Solo vuelve a hablar si el usuario pide un ajuste, y ese ajuste publica otra versión en borrador.
 
@@ -24,7 +24,7 @@ Todavía no hay clases ni archivos. Si el primer mensaje ya trae las tres, en es
 
 ### 2. Proponer
 
-El agente traduce la necesidad a clases y relaciones, con las palabras del usuario, y registra el requerimiento con `completitud: "faltan_datos"`. Puede incluir hasta tres reglas candidatas. No pide archivos en esta fase.
+El agente traduce la necesidad a **clases concretas cargables** (Producto, Movimiento, Conteo, Documento…), no a resúmenes del problema (StockSistema, DiferenciaStock). Los ids y atributos (`producto_id`, `fecha`, `cantidad`) van en columnas de fuentes, no como clases. Registra el requerimiento con `completitud: "faltan_datos"`. Las relaciones las infiere en la tool (no se preguntan ni se listan en el chat ni en el resumen del panel); `esquema.relaciones` no puede quedar vacío y cada clase aparece en al menos una. Puede incluir hasta tres reglas candidatas. No pide archivos en esta fase.
 
 Si el usuario corrige el esquema, se queda aquí y esa corrección es una versión nueva.
 
@@ -32,11 +32,13 @@ Si el usuario corrige el esquema, se queda aquí y esa corrección es una versi�
 
 ### 3. Pedir
 
-Por cada clase o relación que el motor no puede cargar, pregunta dónde vive el dato y qué columnas mínimas hacen falta. Cada fuente es `excel`, `csv`, `pdf` o `crm-export`. Cada fuente y cada columna justifican al menos una clase, una relación o una regla. Lo que no se puede justificar no se pide.
+El agente no pregunta qué archivos tiene la empresa. A partir del esquema y las reglas aceptadas, **deduce y lista** las fuentes y columnas mínimas que harían falta para cargar el grafo y verificar esas hipótesis. Cada fuente es `excel`, `csv`, `pdf` o `crm-export`. Cada fuente y cada columna justifican al menos una clase, una relación o una regla. Lo que no se puede justificar no se pide.
 
-Una ambigüedad que cambia las columnas (motivo en categorías fijas o texto libre) va a `preguntas_abiertas`. No se inventa la columna.
+Los nombres de archivo y columnas salen del vocabulario del negocio (turnos, nómina, pedidos, etc.), no de un catálogo fijo en código. Si el usuario corrige un nombre o un formato, se registra otra versión. Una ambigüedad que cambia las columnas (motivo en categorías fijas o texto libre) va a `preguntas_abiertas`.
 
-**Pasa a confirmar** cuando toda clase usada en una relación tiene una fuente que la justifica, o está nombrada en una pregunta abierta, y cada regla apunta a columnas ya pedidas o a una pregunta abierta. Recién ahí `completitud` puede ser `suficiente_para_confirmar`. Si el modelo lo declara antes, el servidor lo baja a `faltan_datos` y el turno siguiente pregunta lo que falta.
+En el mismo turno en que se entra a pedir, el agente llama a `registrar_requerimiento` con esas fuentes y deja el pedido en el panel para revisión.
+
+**Pasa a confirmar** cuando toda clase usada en una relación tiene una fuente que la justifica, o está nombrada en una pregunta abierta, y cada regla apunta a columnas ya pedidas o a una pregunta abierta. Recién ahí `completitud` puede ser `suficiente_para_confirmar`. Si el modelo lo declara antes, el servidor lo baja a `faltan_datos` y el turno siguiente completa lo que falta.
 
 ### 4. Confirmar
 
@@ -54,10 +56,11 @@ Estas cuatro reglas las hace cumplir el servidor. El prompt las repite, pero si 
 
 **La key no sale del servidor.** `OPENAI_API_KEY` se lee solo en la route, desde el entorno. No se importa en `view/`, no se manda al navegador, no se escribe en el repo y no se imprime en logs. El cliente recibe el texto del turno y el requerimiento ya validado.
 
-**El dominio no está fijo.** No hay listas de clases, columnas ni archivos por caso de uso. Nómina, inventario o pedidos no existen en el código: salen de las palabras de esta conversación. La muestra de empaque que se ve en la pantalla es un fixture visual. La entrevista no la usa como catálogo. Si un requerimiento solo cierra para un dominio precargado, no cumple.
+**El dominio no está fijo.** No hay listas de clases, columnas ni archivos por caso de uso. Nómina, inventario o pedidos no existen en el código: salen de las palabras de esta conversación. La entrevista arranca vacía, en delimitar, sin un caso precargado. Si un requerimiento solo cierra para un dominio fijo, no cumple.
 
 Además:
 
 - No pide un archivo o una columna que ninguna clase, relación o regla usa.
+- No pregunta por el inventario de archivos de la empresa: declara el mínimo necesario y deja que el usuario ajuste.
 - No da la entrevista por cerrada sin aceptación del esquema y sin el mínimo de fuentes, o sin dejar nombrado en una pregunta abierta lo que falta.
 - No cambia de fase por su cuenta. La fase la calcula el código a partir del requerimiento validado y de la respuesta del usuario.

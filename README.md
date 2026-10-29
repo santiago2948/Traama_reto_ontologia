@@ -1,85 +1,99 @@
 # Trama — entrevista de requerimiento
 
-Chat de entrada de Trama. Una persona escribe una necesidad de negocio en lenguaje natural y la entrevista la convierte en un requerimiento formal: qué decisión hay que soportar, qué conceptos y relaciones mirar, qué reglas quedan como hipótesis y qué archivos hacen falta para cargarlas.
+Chat de entrada de Trama. Una persona describe una necesidad de negocio en lenguaje natural y la entrevista la convierte en un requerimiento tipado: decisión a soportar, clases y relaciones, reglas candidatas (como hipótesis) y las fuentes mínimas que harían falta para cargar el grafo y correr el motor de inferencia.
 
-El modelo de lenguaje conduce la conversación. No calcula la respuesta ni inventa cifras. El 15% de “se nos cayó la productividad un 15%” queda como lo formuló quien pregunta. Comprobarlo, y decir si se debe a paradas o a ausentismo, corresponde a un paso posterior: cargar esos datos y pasarlos por un motor de reglas. Este proyecto termina cuando el requerimiento queda confirmado.
+El LLM orquesta la conversación. No calcula la causa, no inventa cifras ni hallazgos. Si alguien dice “bajó un 15%”, eso queda como su formulación. Comprobarlo corresponde a un paso posterior (carga de datos + motor). Este proyecto termina cuando el requerimiento queda confirmado en el panel.
 
-## Cómo está pensado
+## Criterio central: qué datos pedir
 
-La entrevista tiene cuatro momentos. El código decide cuándo se pasa de uno a otro.
+Trama no trae un catálogo fijo por dominio. Tampoco le pregunta al usuario “¿qué archivos tenés?”.
 
-1. **Delimitar.** Dejar la necesidad en una frase, la decisión que hay que tomar y el alcance (período y unidades).
-2. **Proponer.** Traducir eso a clases y relaciones, con reglas candidatas escritas como condición (“si pasa esto, asociar la baja a paradas”).
-3. **Pedir.** Pedir solo los archivos y las columnas que justifican una clase, una relación o una regla.
-4. **Confirmar.** El panel muestra el pedido. Confirmar lo fija. Un ajuste por el chat publica otra versión.
+A partir de la necesidad delimitada y del esquema propuesto, el agente **deduce el mínimo de fuentes y columnas** que el motor necesitaría para verificar las relaciones y reglas candidatas. Cada fuente y cada columna se justifican contra una clase, una relación o una regla. Si no se puede justificar, no se pide.
 
-El código está partido en MVC. La vista no decide qué pasa con un mensaje, y el modelo no conoce React.
+El usuario revisa ese pedido en el panel: confirma, o pide un ajuste por el chat (nombre de archivo, formato, columnas). Un ajuste publica otra versión.
+
+## Flujo de la entrevista
+
+El código decide la fase. El modelo llena el contenido y, cuando corresponde, llama a `registrar_requerimiento`. Si la llamada no valida con Zod, no entra al panel.
+
+1. **Delimitar.** Necesidad en una frase, decisión objetivo y alcance (período + al menos una unidad). Una o dos preguntas por turno, solo si falta algo.
+2. **Proponer.** Clases, relaciones y hasta tres reglas candidatas, en el vocabulario del usuario. Todavía sin fuentes.
+3. **Pedir.** Con el esquema aceptado, el agente **lista** las fuentes y columnas mínimas derivadas del modelo (tipos: `excel`, `csv`, `pdf`, `crm-export`). No inventaria el archivo real de la empresa: declara qué haría falta. Ambigüedades van a `preguntas_abiertas`.
+4. **Confirmar.** El panel muestra la versión. Confirmar la fija. Un ajuste vuelve a borrador con una versión nueva.
+
+Detalle de cuándo pregunta, propone y se detiene: [`DESIGN.md`](./DESIGN.md).
+
+## Arquitectura
 
 ```text
-model/        requerimiento y entrevista. Funciones puras, sin React.
-controller/   une la pantalla con el modelo. Más adelante, la route de OpenAI entra acá.
-view/         chat, panel y componentes de shadcn. Solo dibuja lo que recibe.
-app/          la página, que monta el controlador.
+model/        entrevista, contrato, prompt, validación Zod, interfaz LlmClient
+controller/   pantalla, hook del cliente, implementación OpenAI (server-only)
+view/         chat, panel del requerimiento, shadcn
+app/          página y Route Handler POST /api/chat
 ```
 
-OpenAI, cuando se conecte, queda detrás de una interfaz que usa el controlador. La key vive solo en el servidor.
+La lógica de fases vive en `model/interview.ts`. OpenAI queda detrás de `LlmClient`; se puede cambiar de proveedor sin tocar la entrevista. La key (`OPENAI_API_KEY`) se lee solo en el servidor.
 
-## Esta versión
+## Qué hay hoy
 
-Hoy el repositorio es el cascarón visual, ya ordenado en MVC. No hay llamada a un modelo de lenguaje, ni validación del contrato, ni guardado. La conversación y el requerimiento de la columna derecha son una muestra fija, el caso de productividad en empaque, para ver la interfaz con contenido real. Enviar y confirmar pasan por `model/interview.ts`; la vista solo recibe el resultado.
-
-Lo que sí funciona en pantalla:
-
-- Layout de Trama: header, chat sobre el fondo de sidebar y panel del requerimiento.
-- Composer: Enter envía, Shift+Enter hace un salto de línea. El mensaje nuevo queda en el hilo, solo en el navegador.
-- Confirmar cambia el estado del pedido. El borde punteado es borrador; el borde sólido y el mayor peso de fuente es confirmado. El estado no depende de un color.
-- Modo claro y oscuro, con los tokens en `oklch`.
+- Chat + panel lado a lado, con estilos de Trama (tokens oklch, Geist, claro/oscuro).
+- Entrevista guiada por fases con system prompt.
+- Tool `registrar_requerimiento` + validación en servidor (forma del contrato + justificación de fuentes + rechazo de enunciados que afirman hallazgos).
+- Versiones del requerimiento; Confirmar / Ajustar en el panel.
+- Tope blando de abuso en la API (cantidad y largo de mensajes por request).
+- Estado en el cliente (sin base de datos).
 
 ## Estilos
 
-Next.js (App Router), TypeScript, Tailwind v4 y shadcn/ui con estilo `radix-nova` y base `neutral`. La fuente es Geist, cargada con `next/font/google`.
-
-Los tokens pedidos para la app están en `app/globals.css`:
-
-```css
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-}
-```
-
-El modo oscuro usa los valores correspondientes del mismo archivo. shadcn necesita alias extra (`card-foreground`, `accent`, `popover`, variables de sidebar). Esos alias siguen la misma escala de grises.
-
-La interfaz sigue la referencia de la app:
-
-| Pieza | Tratamiento |
-| --- | --- |
-| Header | `h-14 border-b px-6`. “Trama” en `text-sm font-semibold` y la etiqueta `ENTREVISTA` en `text-xs tracking-wide`. |
-| Columnas | Separadas con `divide-x`. Chat en `bg-sidebar`. Panel en `bg-background`, encabezado `border-b px-6 py-4`. |
-| Mensajes | Ancho completo, a la izquierda, `rounded-md border p-2 text-sm`. Agente con `bg-muted`. Usuario con `border-foreground/20`. Etiqueta “Agente” o “Vos”. |
-| Composer | Textarea `min-h-16 rounded-lg` y botón “Enviar”. |
-| Cards | `rounded-xl ring-1 ring-foreground/10`, padding de 16px, sin sombra. |
+Next.js (App Router), TypeScript, Tailwind v4 y shadcn/ui (`radix-nova`, base `neutral`). Tokens en `app/globals.css`. Estados por borde sólido/punteado y peso tipográfico, no por color.
 
 ## Cómo correrlo
 
 ```bash
 npm install
+```
+
+Creá `.env` (no se commitea):
+
+```bash
+OPENAI_API_KEY=sk-...
+# opcional
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+```bash
 npm run dev
 ```
 
 Abrí `http://localhost:3000`.
 
-## Qué sigue
+## Decisiones
 
-La entrevista de verdad: el contrato `RequerimientoMotor` validado con Zod, la tool `registrar_requerimiento`, las fases en código, la route de servidor con `OPENAI_API_KEY` y el tope de uso antes de desplegar en Vercel. El panel de esta vista es el lugar donde ese objeto va a reemplazar a la muestra.
+| Decisión | Por qué | Alternativa descartada |
+| --- | --- | --- |
+| Fases en código, no solo en el prompt | El servidor controla el avance; el modelo no “decide” la fase | Dejar que el LLM cambie de fase solo |
+| Function calling + Zod | Salida tipada y rechazable antes del panel | Pedir JSON libre en el mensaje |
+| Fuentes derivadas del esquema | El corazón del reto es *qué* datos hacen falta y por qué | Preguntar al usuario qué archivos ya tiene |
+| Interfaz `LlmClient` | Cambiar proveedor sin tocar la entrevista | Llamar OpenAI desde la UI o desde el modelo |
+| Key solo en route | Cumple la regla no negociable del reto | Cualquier uso en el cliente |
+
+## Limitaciones conocidas
+
+- Todavía no hay tests automatizados ni despliegue documentado en Vercel.
+- La protección anti-abuso es mínima (límites por request); falta contraseña o rate limit por sesión/IP.
+- Un refresh pierde el hilo (no hay `localStorage`).
+- La calidad de las fuentes propuestas depende del modelo; el usuario debe poder corregir nombres y columnas.
+- Sin streaming de respuestas.
+
+## Qué haríamos después
+
+1. Conectar el requerimiento confirmado a una carga de archivos (mapeo columna → clase/relación).
+2. Materializar el grafo y pasar las reglas candidatas al motor de inferencia.
+3. Devolver contradicciones y relaciones encontradas sin que el LLM invente cifras.
+4. Tests con LLM simulado y despliegue en Vercel con `OPENAI_API_KEY` en el entorno.
+
+## Entrega del reto
+
+- Repo: este proyecto en GitHub.
+- `DESIGN.md`: diseño de la entrevista.
+- Pendiente de cierre: URL en Vercel, tres transcripciones con su requerimiento, video/GIF corto.
