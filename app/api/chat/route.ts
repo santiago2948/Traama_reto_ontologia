@@ -19,6 +19,9 @@ import { describeConfirmation, type Requirement, type Source } from "@/model/req
 import { registrarRequerimientoTool, validateRequirement } from "@/model/requirement-schema"
 import OpenAI from "openai"
 
+/** Hobby: hasta 60s. El turno puede hacer 1–2 llamadas a OpenAI. */
+export const maxDuration = 60
+
 const phases: InterviewPhase[] = ["delimitar", "proponer", "pedir", "confirmar"]
 const maxMessages = 40
 const maxChars = 2_000

@@ -59,8 +59,8 @@ export function enrichOpenQuestions(requirement: Requirement): Requirement {
       ),
     )
     if (hasCategoricalAmbiguity) {
-      const decisionHint = requirement.decision.trim()
-        ? ` (p. ej. para distinguir opciones como en «${clip(requirement.decision, 80)}»)`
+      const decisionHint = requirement.decision_objetivo.trim()
+        ? ` (p. ej. para distinguir opciones como en «${clip(requirement.decision_objetivo, 80)}»)`
         : ""
       extras.push(
         `En los datos que vamos a pedir hay campos de motivo, categoría o estado${decisionHint}. ¿Se cargan con una lista fija de valores o como texto libre? Eso cambia cómo se modelan.`,
@@ -91,7 +91,7 @@ export function formatOpenQuestionForChat(
     return trimmed
   }
 
-  const decision = requirement.decision.trim()
+  const decision = requirement.decision_objetivo.trim()
   const need = requirement.necesidad.trim()
   const focus = decision || need
   const bridge = focus

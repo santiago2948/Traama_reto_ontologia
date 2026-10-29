@@ -53,7 +53,7 @@ Next.js (App Router), TypeScript, Tailwind v4 y shadcn/ui (`radix-nova`, base `n
 npm install
 ```
 
-Creá `.env` (no se commitea):
+Copiá `.env.example` a `.env` (no se commitea) y completá la key:
 
 ```bash
 OPENAI_API_KEY=sk-...
@@ -67,6 +67,25 @@ npm run dev
 
 Abrí `http://localhost:3000`.
 
+## Despliegue en Vercel
+
+1. Subí el repo a GitHub (este proyecto ya apunta a `origin`).
+2. En [vercel.com/new](https://vercel.com/new) importá el repositorio. Framework: **Next.js** (autodetectado). Sin build command custom.
+3. En **Environment Variables** agregá (Production + Preview):
+   - `OPENAI_API_KEY` — obligatoria
+   - `OPENAI_MODEL` — opcional (`gpt-4.1-mini` por defecto)
+4. Deploy. La API `/api/chat` corre en Node con `maxDuration = 60` (Hobby permite hasta 60s).
+
+CLI (alternativa):
+
+```bash
+npx vercel
+npx vercel env add OPENAI_API_KEY
+npx vercel --prod
+```
+
+Sin la key en el entorno de Vercel, el chat responde error de servidor.
+
 ## Decisiones
 
 | Decisión | Por qué | Alternativa descartada |
@@ -79,21 +98,23 @@ Abrí `http://localhost:3000`.
 
 ## Limitaciones conocidas
 
-- Todavía no hay tests automatizados ni despliegue documentado en Vercel.
+- Todavía no hay tests automatizados.
 - La protección anti-abuso es mínima (límites por request); falta contraseña o rate limit por sesión/IP.
 - Un refresh pierde el hilo (no hay `localStorage`).
 - La calidad de las fuentes propuestas depende del modelo; el usuario debe poder corregir nombres y columnas.
 - Sin streaming de respuestas.
+- En Hobby, un turno con varias llamadas al modelo puede acercarse al tope de 60s.
 
 ## Qué haríamos después
 
 1. Conectar el requerimiento confirmado a una carga de archivos (mapeo columna → clase/relación).
 2. Materializar el grafo y pasar las reglas candidatas al motor de inferencia.
 3. Devolver contradicciones y relaciones encontradas sin que el LLM invente cifras.
-4. Tests con LLM simulado y despliegue en Vercel con `OPENAI_API_KEY` en el entorno.
+4. Tests con LLM simulado.
 
 ## Entrega del reto
 
 - Repo: este proyecto en GitHub.
 - `DESIGN.md`: diseño de la entrevista.
-- Pendiente de cierre: URL en Vercel, tres transcripciones con su requerimiento, video/GIF corto.
+- Despliegue: ver sección Vercel arriba.
+- Pendiente de cierre: URL pública, tres transcripciones con su requerimiento, video/GIF corto.
