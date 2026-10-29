@@ -1,3 +1,5 @@
+import type { InterviewPhase } from "@/model/interview"
+
 export type Relation = {
   sujeto: string
   predicado: string
@@ -35,6 +37,88 @@ export type Requirement = {
   fuentes_requeridas: Source[]
   preguntas_abiertas: string[]
   completitud: Completeness
+}
+
+const sourceLabels: Record<SourceType, string> = {
+  excel: "Excel",
+  csv: "CSV",
+  pdf: "PDF",
+  "crm-export": "exportación del sistema",
+}
+
+/** Mensajes cortos del chat. El detalle vive en el panel; el resumen largo solo al confirmar. */
+export function describePhase(phase: InterviewPhase, requirement: Requirement | null) {
+  if (phase === "confirmar") {
+    return describeConfirmation(requirement)
+  }
+  if (phase === "proponer") {
+    return "Dejé la propuesta en el panel de la derecha. Si está bien, respondé que sí. Si hay que cambiar algo, decime qué."
+  }
+  if (phase === "pedir") {
+    const open =
+      Array.isArray(requirement?.preguntas_abiertas) && requirement.preguntas_abiertas.length > 0
+        ? " Hay preguntas abiertas marcadas en el panel."
+        : ""
+    return `Ya están las fuentes mínimas en el panel.${open} Si está bien, respondé que sí. Si hay que cambiar algo, decime qué.`
+  }
+  if (phase === "delimitar") {
+    return "Con eso avanzo. Si falta un detalle concreto, decime cuál."
+  }
+  return ""
+}
+
+/** Único resumen largo del chat: cuando se pide confirmar en el panel. */
+export function describeConfirmation(requirement: Requirement | null) {
+  if (!requirement) {
+    return "Revisá el modelo del panel. Si está bien, apretá Confirmar."
+  }
+  return [
+    "Así quedó el requerimiento. Revisalo en el panel y apretá Confirmar:",
+    "",
+    "Necesidad",
+    plain(requirement.necesidad),
+    "",
+    "Decisión",
+    plain(requirement.decision_objetivo),
+    "",
+    "Alcance",
+    `${requirement.alcance.periodo} · ${requirement.alcance.unidades.join(", ")}`,
+    "",
+    "Clases",
+    requirement.esquema.clases.join(" · "),
+    ...(requirement.reglas_candidatas.length > 0
+      ? [
+          "",
+          "Reglas candidatas",
+          ...requirement.reglas_candidatas.map((rule) => `- ${rule.enunciado}`),
+        ]
+      : []),
+    ...(requirement.fuentes_requeridas.length > 0
+      ? [
+          "",
+          "Fuentes requeridas",
+          ...requirement.fuentes_requeridas.map(
+            (source) =>
+              `- ${source.nombre} (${sourceLabels[source.tipo]}): ${source.columnas_minimas.join(", ")}`,
+          ),
+        ]
+      : []),
+    ...(Array.isArray(requirement.preguntas_abiertas) &&
+    requirement.preguntas_abiertas.length > 0
+      ? [
+          "",
+          "Preguntas abiertas",
+          ...requirement.preguntas_abiertas.map((question) => `- ${question}`),
+        ]
+      : []),
+    "",
+    "Si hay que cambiar algo, escribilo en el chat.",
+  ].join("\n")
+}
+
+function plain(text: string) {
+  const trimmed = text.trim()
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`
 }
 
 export const sampleRequirement: Requirement = {

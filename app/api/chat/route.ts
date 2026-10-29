@@ -2,16 +2,20 @@ import { connection } from "next/server"
 import { createLlmClient } from "@/controller/openai-llm"
 import {
   acceptDraft,
-  acceptsNoChanges,
   acceptsProposal,
   phaseAfterUserReply,
   resolvePhase,
+  scopeLooksReady,
   type InterviewPhase,
 } from "@/model/interview"
 import type { LlmMessage } from "@/model/llm"
-import { enrichOpenQuestions, mergeOpenQuestions } from "@/model/open-questions"
+import {
+  enrichOpenQuestions,
+  formatOpenQuestionForChat,
+  mergeOpenQuestions,
+} from "@/model/open-questions"
 import { buildSystemPrompt } from "@/model/prompt"
-import { describePhase, type Requirement, type Source } from "@/model/requirement"
+import { describeConfirmation, type Requirement, type Source } from "@/model/requirement"
 import { registrarRequerimientoTool, validateRequirement } from "@/model/requirement-schema"
 import OpenAI from "openai"
 
@@ -85,17 +89,18 @@ export async function POST(request: Request) {
   const userText = lastUser?.text ?? ""
   const acceptedDraft = acceptDraft(requirement, userText)
   const phase = phaseAfterUserReply(requestedPhase, userText, acceptedDraft ?? requirement)
+  const userTexts = messages.filter((message) => message.role === "user").map((message) => message.text)
+  const turns = userTexts.length
 
-  // Confirmación final: ya hay fuentes y el usuario acepta.
+  // Solo en la fase final el "sí" confirma el pedido.
   if (
+    phase === "confirmar" &&
     requirement?.fuentes_requeridas.length &&
-    (acceptedDraft?.completitud === "suficiente_para_confirmar" ||
-      ((acceptsProposal(userText) || acceptsNoChanges(userText)) &&
-        (requestedPhase === "pedir" || phase === "confirmar")))
+    acceptsProposal(userText)
   ) {
     const confirmed = { ...requirement, completitud: "suficiente_para_confirmar" as const }
     return Response.json({
-      message: describePhase("confirmar", confirmed),
+      message: "Quedó confirmado. Si necesitás un ajuste, escribilo; si no, descargá el JSON desde el panel.",
       requirement: confirmed,
       phase: "confirmar",
     })
@@ -103,59 +108,61 @@ export async function POST(request: Request) {
 
   try {
     const client = createLlmClient()
-    const system = buildSystemPrompt(phase, requirement)
     const llmMessages = toLlmMessages(messages)
-    const turns = userTurns(messages)
 
-    // 1) Pedir fuentes: una sola llamada, merge sobre el esquema aceptado.
-    if (phase === "pedir" && requirement?.esquema.clases.length) {
-      const next = enrichOpenQuestions(await registerSources(client, system, llmMessages, requirement))
+    // Ajuste después del resumen final: vuelve a armar el pedido.
+    if (phase === "confirmar" && requirement && !acceptsProposal(userText)) {
+      const next = await reviseRequirement(client, requirement, llmMessages, userText)
+      return finishOrAsk(enrichOpenQuestions(next))
+    }
+
+    // Ya hay esquema pero faltan fuentes: cerrar pedir.
+    if (requirement?.esquema.clases.length && !requirement.fuentes_requeridas.length) {
+      const system = buildSystemPrompt("pedir", requirement)
+      const next = enrichOpenQuestions(
+        await registerSources(client, system, llmMessages, requirement),
+      )
+      return finishOrAsk(next)
+    }
+
+    // Ya hay fuentes: incorporar la respuesta de la entrevista y seguir o cerrar.
+    // No re-enriquecer preguntas abiertas: si no, se reeditan en bucle.
+    if (requirement?.fuentes_requeridas.length && phase !== "confirmar") {
+      const next = await reviseRequirement(client, requirement, llmMessages, userText)
+      return finishOrAsk(next)
+    }
+
+    // Delimitar: entrevistar hasta tener alcance; después armar todo y cerrar.
+    const readyToModel = turns >= 3 || (turns >= 2 && scopeLooksReady(userTexts))
+    if (!readyToModel) {
+      const system = buildSystemPrompt("delimitar", requirement)
+      const turn = await client.complete({
+        system,
+        messages: llmMessages,
+        tools: [registrarRequerimientoTool],
+      })
+      const question = keepConversation(turn.message.trim())
       return Response.json({
-        message: describePhase("pedir", next),
-        requirement: next,
-        phase: resolvePhase(phase, next),
+        message:
+          question ||
+          [
+            "Para entenderlo mejor:",
+            "1. ¿Qué decisión querés poder tomar con este análisis?",
+            "2. ¿Desde cuándo lo están notando?",
+          ].join("\n"),
+        requirement: null,
+        phase: "delimitar",
       })
     }
 
-    // 2) Proponer modelo: a partir del 2º mensaje del usuario, una sola tool call.
-    if (phase === "delimitar" && turns >= 2) {
-      const next = enrichOpenQuestions(await registerProposal(client, system, llmMessages, messages))
-      return Response.json({
-        message: describePhase("proponer", next),
-        requirement: next,
-        phase: resolvePhase("delimitar", next),
-      })
-    }
-
-    // 3) Delimitar: solo preguntas (sin forzar tool).
-    const turn = await client.complete({
-      system,
-      messages: llmMessages,
-      tools: [registrarRequerimientoTool],
-    })
-    const accepted = acceptToolCall(turn.toolCall, phase, requirement)
-    if (accepted.requirement) {
-      const next = enrichOpenQuestions(accepted.requirement)
-      const nextPhase = resolvePhase(phase, next)
-      return Response.json({
-        message: describePhase(nextPhase === "pedir" ? "pedir" : "proponer", next),
-        requirement: next,
-        phase: nextPhase,
-      })
-    }
-
-    const question = keepConversation(turn.message.trim())
-    return Response.json({
-      message:
-        question ||
-        [
-          "Para delimitarlo necesito saber:",
-          "1. ¿Qué decisión querés poder tomar con esto?",
-          "2. ¿En qué período lo estás viendo?",
-        ].join("\n"),
-      requirement: null,
-      phase,
-    })
+    const system = buildSystemPrompt("delimitar", requirement)
+    const proposed = enrichOpenQuestions(
+      await registerProposal(client, system, llmMessages, messages),
+    )
+    const withSources = enrichOpenQuestions(
+      await registerSources(client, buildSystemPrompt("pedir", proposed), llmMessages, proposed),
+    )
+    return finishOrAsk(withSources)
   } catch (error) {
     const status = error instanceof OpenAI.APIError ? error.status : undefined
     console.error("openai_failed", status ?? "unknown")
@@ -171,8 +178,35 @@ export async function POST(request: Request) {
   }
 }
 
+function finishOrAsk(requirement: Requirement) {
+  const open = Array.isArray(requirement.preguntas_abiertas)
+    ? requirement.preguntas_abiertas.filter(Boolean)
+    : []
+
+  // Si aún hay una duda concreta de datos, preguntarla con un poco de contexto.
+  if (requirement.completitud !== "suficiente_para_confirmar" && open.length > 0) {
+    return Response.json({
+      message: formatOpenQuestionForChat(requirement, open[0]),
+      requirement,
+      phase: resolvePhase("pedir", requirement),
+    })
+  }
+
+  const ready = markReady(requirement)
+  return Response.json({
+    message: describeConfirmation(ready),
+    requirement: ready,
+    phase: "confirmar",
+  })
+}
+
+function markReady(requirement: Requirement): Requirement {
+  if (!requirement.fuentes_requeridas.length) return requirement
+  return { ...requirement, completitud: "suficiente_para_confirmar" }
+}
+
 async function registerProposal(
-  client: LlmClient,
+  client: ReturnType<typeof createLlmClient>,
   system: string,
   llmMessages: LlmMessage[],
   messages: IncomingMessage[],
@@ -185,34 +219,23 @@ async function registerProposal(
   const turn = await client.complete({
     system: `${system}
 
-La persona ya dio necesidad, decisión y alcance en el hilo. No preguntes más.
-Llamá a registrar_requerimiento ahora con:
-- necesidad, decision_objetivo y alcance tomados del hilo
-- clases concretas cargables (4 a 7), no abstractas
-- relaciones conectando cada clase
-- hasta 3 reglas candidatas como hipótesis
-- fuentes_requeridas: []
-- preguntas_abiertas: ambigüedades del alcance o sospecha (o [] si no hay)
-- completitud: "faltan_datos"
+Ya hay información suficiente en el hilo. No preguntes más.
+Llamá a registrar_requerimiento con necesidad, decisión, alcance, clases concretas, relaciones, hasta 3 reglas, fuentes_requeridas [], preguntas_abiertas si hace falta, completitud "faltan_datos".
 
 Mensajes del usuario:
-- ${userBits}
-
-Mensaje de chat vacío.`,
+- ${userBits}`,
     messages: llmMessages,
     tools: [registrarRequerimientoTool],
     toolChoice: "required",
   })
 
-  const accepted = acceptToolCall(turn.toolCall, "delimitar", null)
+  const accepted = acceptToolCall(turn.toolCall, null)
   if (accepted.requirement) return accepted.requirement
-
-  // Último recurso predecible: armar un borrador mínimo desde el hilo.
   return proposalFromMessages(messages)
 }
 
 async function registerSources(
-  client: LlmClient,
+  client: ReturnType<typeof createLlmClient>,
   system: string,
   llmMessages: LlmMessage[],
   previous: Requirement,
@@ -220,21 +243,66 @@ async function registerSources(
   const turn = await client.complete({
     system: `${system}
 
-El esquema ya está aceptado. No lo reescribas.
+El esquema ya está. No lo reescribas.
 Base:
 ${JSON.stringify(previous)}
 
 Llamá a registrar_requerimiento manteniendo necesidad, decisión, alcance, esquema y reglas.
-Solo completá fuentes_requeridas (mínimo justificado) y preguntas_abiertas si hace falta.
-Mensaje vacío.`,
+Completá fuentes_requeridas mínimas y preguntas_abiertas solo si hay ambigüedad real de datos.`,
     messages: llmMessages,
     tools: [registrarRequerimientoTool],
     toolChoice: "required",
   })
 
-  const accepted = acceptToolCall(turn.toolCall, "pedir", previous)
+  const accepted = acceptToolCall(turn.toolCall, previous)
   if (accepted.requirement?.fuentes_requeridas.length) return accepted.requirement
   return sourcesFromSchema(previous)
+}
+
+async function reviseRequirement(
+  client: ReturnType<typeof createLlmClient>,
+  previous: Requirement,
+  llmMessages: LlmMessage[],
+  userText: string,
+) {
+  const turn = await client.complete({
+    system: `${buildSystemPrompt("pedir", previous)}
+
+La persona aportó este dato o ajuste: "${userText}".
+Actualizá el requerimiento con registrar_requerimiento.
+Conservá lo que siga válido. Si respondió una pregunta abierta, sacala de preguntas_abiertas o reformulala.
+Completá o corregí fuentes/columnas si corresponde.`,
+    messages: llmMessages,
+    tools: [registrarRequerimientoTool],
+    toolChoice: "required",
+  })
+
+  const accepted = acceptToolCall(turn.toolCall, previous)
+  if (accepted.requirement) {
+    return consumeAnsweredQuestion(accepted.requirement, userText, previous)
+  }
+  return consumeAnsweredQuestion(previous, userText, previous)
+}
+
+function consumeAnsweredQuestion(
+  requirement: Requirement,
+  userText: string,
+  previous: Requirement,
+): Requirement {
+  const open = Array.isArray(requirement.preguntas_abiertas)
+    ? [...requirement.preguntas_abiertas]
+    : []
+  if (open.length === 0) return requirement
+
+  // Si el usuario respondió con sustancia, retiramos la primera pregunta abierta previa.
+  if (userText.trim().length > 2 && previous.preguntas_abiertas[0]) {
+    const answered = previous.preguntas_abiertas[0]
+    return {
+      ...requirement,
+      preguntas_abiertas: open.filter((question) => question !== answered),
+    }
+  }
+  return requirement
 }
 
 function proposalFromMessages(messages: IncomingMessage[]): Requirement {
@@ -269,12 +337,10 @@ function proposalFromMessages(messages: IncomingMessage[]): Requirement {
       period ? null : "¿Cuál es el período exacto a analizar?",
       unit ? null : "¿Sobre qué unidad o área exacta aplica el análisis?",
     ]),
-    completitud: "faltan_datos",
+    completitud: "faltan_datos" as const,
   }
   const validated = validateRequirement(draft)
-  if (!validated.ok) {
-    throw new Error("No se pudo armar el borrador del requerimiento")
-  }
+  if (!validated.ok) throw new Error("No se pudo armar el borrador del requerimiento")
   return enrichOpenQuestions(validated.requirement)
 }
 
@@ -294,7 +360,7 @@ function sourcesFromSchema(previous: Requirement): Requirement {
     ...previous,
     fuentes_requeridas: [source],
     preguntas_abiertas: mergeOpenQuestions(previous.preguntas_abiertas, [
-      "¿Los datos viven en Excel, CSV, PDF o una exportación de CRM, y con qué nombre interno?",
+      "En los datos que vamos a pedir hay campos de categoría o motivo. ¿Se cargan con una lista fija de valores o como texto libre? Eso cambia cómo se modelan.",
     ]),
     completitud: "faltan_datos",
   })
@@ -303,9 +369,6 @@ function sourcesFromSchema(previous: Requirement): Requirement {
     : {
         ...previous,
         fuentes_requeridas: [source],
-        preguntas_abiertas: mergeOpenQuestions(previous.preguntas_abiertas, [
-          "¿Los datos viven en Excel, CSV, PDF o una exportación de CRM, y con qué nombre interno?",
-        ]),
         completitud: "faltan_datos" as const,
       }
   return enrichOpenQuestions(requirement)
@@ -337,27 +400,18 @@ function toColumn(name: string) {
 
 function keepConversation(text: string) {
   if (!text) return ""
-  if (/no pude cerrar|todavía estoy armando|decime el dato que falta/i.test(text)) return ""
-  if (
-    !/así quedó esta parte|así quedó el requerimiento|\bnecesidad\s*[:：]|\bdecisión\s*[:：]/i.test(
-      text,
-    )
-  ) {
-    return text
+  if (/mirá el panel|respondé que sí|dejé la propuesta|ya están las fuentes/i.test(text)) {
+    return ""
   }
-  const cut = text.search(
-    /(?:para delimitar|necesito saber|me falta|una pregunta|\n\s*\d{1,2}[.)]\s)/i,
-  )
-  return cut >= 0 ? text.slice(cut).trim() : ""
-}
-
-function userTurns(history: IncomingMessage[]) {
-  return history.filter((message) => message.role === "user").length
+  if (/así quedó|necesidad\s*[:：]|decisión\s*[:：]/i.test(text)) {
+    const cut = text.search(/(?:para entender|necesito saber|una pregunta|\n\s*\d{1,2}[.)]\s)/i)
+    return cut >= 0 ? text.slice(cut).trim() : ""
+  }
+  return text
 }
 
 function acceptToolCall(
   toolCall: { name: string; arguments: unknown } | null,
-  phase: InterviewPhase,
   previous: Requirement | null,
 ) {
   if (!toolCall || toolCall.name !== "registrar_requerimiento") {
@@ -367,14 +421,11 @@ function acceptToolCall(
     return { requirement: null, errors: ["La tool devolvió argumentos inválidos."] }
   }
 
-  if (phase === "pedir" && previous) {
+  if (previous) {
     const merged = mergeSources(previous, toolCall.arguments)
-    if (merged.ok) {
-      if (!merged.requirement.fuentes_requeridas.length) {
-        return { requirement: null, errors: ["Faltan fuentes_requeridas."] }
-      }
-      return { requirement: merged.requirement, errors: [] as string[] }
-    }
+    if (merged.ok) return { requirement: merged.requirement, errors: [] as string[] }
+    const validated = validateRequirement(toolCall.arguments)
+    if (validated.ok) return { requirement: validated.requirement, errors: [] as string[] }
     return { requirement: null, errors: merged.errors }
   }
 
@@ -390,6 +441,15 @@ function mergeSources(previous: Requirement, args: unknown) {
   const record = args as Record<string, unknown>
   return validateRequirement({
     ...previous,
+    ...(typeof record.necesidad === "string" ? { necesidad: record.necesidad } : {}),
+    ...(typeof record.decision_objetivo === "string"
+      ? { decision_objetivo: record.decision_objetivo }
+      : {}),
+    ...(record.alcance && typeof record.alcance === "object" ? { alcance: record.alcance } : {}),
+    ...(record.esquema && typeof record.esquema === "object" ? { esquema: record.esquema } : {}),
+    ...(Array.isArray(record.reglas_candidatas)
+      ? { reglas_candidatas: record.reglas_candidatas }
+      : {}),
     fuentes_requeridas: Array.isArray(record.fuentes_requeridas)
       ? record.fuentes_requeridas
       : previous.fuentes_requeridas,
@@ -399,6 +459,6 @@ function mergeSources(previous: Requirement, args: unknown) {
     completitud:
       record.completitud === "suficiente_para_confirmar" || record.completitud === "faltan_datos"
         ? record.completitud
-        : "faltan_datos",
+        : previous.completitud,
   })
 }

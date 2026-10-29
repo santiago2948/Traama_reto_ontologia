@@ -18,6 +18,7 @@ export type LlmTurnInput = {
   system: string
   messages: LlmMessage[]
   tools?: LlmTool[]
+  toolChoice?: "auto" | "required"
 }
 
 export type LlmTurnResult = {

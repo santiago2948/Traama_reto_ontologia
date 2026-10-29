@@ -23,28 +23,25 @@ function panelStatus(requirement: Requirement, confirmed: boolean) {
   }
   if (requirement.fuentes_requeridas.length === 0) {
     return {
-      badge: "Revisá la propuesta",
-      footer: "Si las clases están bien, respondé en el chat.",
+      badge: "Armando propuesta",
+      footer: "El chat sigue la entrevista; el modelo aparece acá al avanzar.",
     }
   }
-  if (openQuestions.length > 0) {
+  if (openQuestions.length > 0 && requirement.completitud !== "suficiente_para_confirmar") {
     return {
       badge: "Hay preguntas abiertas",
-      footer:
-        requirement.completitud === "suficiente_para_confirmar"
-          ? "Podés confirmar igual o aclarar las preguntas abiertas en el chat."
-          : "Respondé las preguntas abiertas en el chat o pedí un ajuste.",
+      footer: "El chat te pide el dato que falta para cerrar el pedido.",
     }
   }
   if (requirement.completitud === "suficiente_para_confirmar") {
     return {
       badge: "Esperando confirmación",
-      footer: "Revisá el modelo y apretá Confirmar.",
+      footer: "Revisá el requerimiento y apretá Confirmar.",
     }
   }
   return {
-    badge: "Faltan datos",
-    footer: "Respondé en el chat el dato que falta.",
+    badge: "En curso",
+    footer: "Seguí la entrevista en el chat.",
   }
 }
 

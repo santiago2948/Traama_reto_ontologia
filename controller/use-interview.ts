@@ -7,8 +7,15 @@ import {
   createInterview,
   isSendable,
   toggleConfirmation,
+  type InterviewPhase,
 } from "@/model/interview"
 import type { Requirement } from "@/model/requirement"
+
+const phases: InterviewPhase[] = ["delimitar", "proponer", "pedir", "confirmar"]
+
+function isPhase(value: unknown): value is InterviewPhase {
+  return typeof value === "string" && phases.includes(value as InterviewPhase)
+}
 
 export function useInterviewController() {
   const [interview, setInterview] = useState(createInterview)
@@ -42,12 +49,28 @@ export function useInterviewController() {
         message?: string
         error?: string
         requirement?: Requirement | null
+        phase?: InterviewPhase
       }
-      if (!response.ok || !payload.message) {
-        setError(payload.error ?? "No se pudo consultar al modelo. Tu mensaje sigue en el hilo.")
+
+      const reply = payload.message?.trim() ?? ""
+      if (reply || payload.requirement || isPhase(payload.phase)) {
+        setInterview((current) => {
+          const turned =
+            reply || payload.requirement
+              ? applyAgentTurn(current, reply, payload.requirement ?? null)
+              : current
+          return isPhase(payload.phase) ? { ...turned, phase: payload.phase } : turned
+        })
+      }
+
+      if (!response.ok) {
+        setError(payload.error ?? "No se pudo completar el turno. Tu mensaje sigue en el hilo.")
         return
       }
-      setInterview((current) => applyAgentTurn(current, payload.message ?? "", payload.requirement ?? null))
+
+      if (!reply && !payload.requirement) {
+        setError(payload.error ?? "Todavía estoy armando esta parte. Probá de nuevo.")
+      }
     } catch {
       setError("No se pudo consultar al modelo. Tu mensaje sigue en el hilo.")
     } finally {

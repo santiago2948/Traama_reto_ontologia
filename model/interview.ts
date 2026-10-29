@@ -1,4 +1,4 @@
-import { sampleRequirement, type Requirement } from "@/model/requirement"
+import type { Requirement } from "@/model/requirement"
 
 export type InterviewPhase = "delimitar" | "proponer" | "pedir" | "confirmar"
 
@@ -12,58 +12,76 @@ export type ChatMessage = {
 
 export type InterviewState = {
   messages: ChatMessage[]
-  requirement: Requirement
+  requirement: Requirement | null
   version: number
   confirmed: boolean
   phase: InterviewPhase
 }
 
-const sampleMessages: ChatMessage[] = [
-  {
-    id: "m1",
-    role: "user",
-    text: "Quiero saber por qué se redujo la productividad en un 15%.",
-  },
-  {
-    id: "m2",
-    role: "agent",
-    text: "Para armar el pedido necesito cerrar dos cosas. ¿Productividad de qué, medida contra qué período? ¿Y la decisión es elegir entre causas concretas, por ejemplo ausentismo o paradas de máquina?",
-  },
-  {
-    id: "m3",
-    role: "user",
-    text: "Unidades producidas por hora-hombre en la planta de empaque, este trimestre contra el anterior. Queremos decidir si el problema está en el ausentismo o en las paradas de máquina.",
-  },
-  {
-    id: "m4",
-    role: "agent",
-    text: "Con eso el pedido queda en el panel: operario, línea, turno, supervisor, parte de producción, parada y ausencia. R1 y R2 son hipótesis para revisar cuando existan los Excel. El 15% queda como lo formulaste; esta vista no lo calcula.",
-  },
-]
-
 export function createInterview(): InterviewState {
   return {
-    messages: sampleMessages,
-    requirement: sampleRequirement,
-    version: 2,
+    messages: [],
+    requirement: null,
+    version: 0,
     confirmed: false,
-    phase: "confirmar",
+    phase: "delimitar",
   }
 }
 
+function normalize(text: string) {
+  return text
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+}
+
+export function acceptsProposal(text: string) {
+  const value = normalize(text)
+  if (!value || value.length > 120) return false
+  if (/\b(pero|saca|cambia|agrega|quita|falta|excepto|menos|mal|incorrecto)\b/.test(value)) {
+    return false
+  }
+  if (/^(no|no hace falta|sin cambios|deja asi|dejalo asi)(\b|[,.!]|$)/.test(value)) {
+    return true
+  }
+  if (/\bno\b/.test(value)) return false
+  return /^(si|ok|okay|dale|de acuerdo|correcto|asi esta|esta bien|esta correcto|me parece bien|perfecto|confirmo|adelante)(\b|[,.!]|$)/.test(
+    value,
+  )
+}
+
+export function acceptDraft(requirement: Requirement | null, text: string): Requirement | null {
+  if (!requirement || !acceptsProposal(text)) return requirement
+  if (requirement.esquema.clases.length === 0 || requirement.fuentes_requeridas.length === 0) {
+    return requirement
+  }
+  return { ...requirement, completitud: "suficiente_para_confirmar" }
+}
+
+/** Las fases intermedias avanzan solas por datos; el "sí" solo cierra la confirmación final. */
+export function phaseAfterUserReply(
+  phase: InterviewPhase,
+  text: string,
+  requirement: Requirement | null = null,
+): InterviewPhase {
+  if (phase === "confirmar" && acceptsProposal(text) && requirement?.fuentes_requeridas.length) {
+    return "confirmar"
+  }
+  return phase
+}
+
 export function resolvePhase(phase: InterviewPhase, requirement: Requirement | null): InterviewPhase {
-  if (!requirement) return phase
+  if (!requirement) return phase === "confirmar" ? "delimitar" : phase
   const hasSchema = requirement.esquema.clases.length > 0
   const hasSources = requirement.fuentes_requeridas.length > 0
-  if (phase === "delimitar" && hasSchema) {
-    if (!hasSources) return "proponer"
-    return requirement.completitud === "suficiente_para_confirmar" ? "confirmar" : "pedir"
+
+  if (hasSchema && hasSources && requirement.completitud === "suficiente_para_confirmar") {
+    return "confirmar"
   }
-  if (phase === "proponer" && hasSources) {
-    return requirement.completitud === "suficiente_para_confirmar" ? "confirmar" : "pedir"
-  }
-  if (phase === "pedir" && requirement.completitud === "suficiente_para_confirmar") return "confirmar"
-  return phase
+  if (hasSchema && hasSources) return "pedir"
+  if (hasSchema) return "proponer"
+  return "delimitar"
 }
 
 export function applyAgentTurn(
@@ -73,12 +91,16 @@ export function applyAgentTurn(
 ): InterviewState {
   const withMessage = appendAgentMessage(state, message)
   if (!requirement) return withMessage
+  const phase = resolvePhase(state.phase, requirement)
+  if (state.requirement && JSON.stringify(state.requirement) === JSON.stringify(requirement)) {
+    return { ...withMessage, phase }
+  }
   return {
     ...withMessage,
     requirement,
     version: state.version + 1,
     confirmed: false,
-    phase: resolvePhase(state.phase, requirement),
+    phase,
   }
 }
 
@@ -90,12 +112,18 @@ export function appendUserMessage(state: InterviewState, text: string): Intervie
   const trimmed = text.trim()
   if (!trimmed) return state
 
-  return {
+  const next: InterviewState = {
     ...state,
     messages: [
       ...state.messages,
       { id: `local-${state.messages.length + 1}`, role: "user", text: trimmed },
     ],
+  }
+  const requirement = acceptDraft(next.requirement, trimmed)
+  return {
+    ...next,
+    requirement,
+    phase: phaseAfterUserReply(next.phase, trimmed, requirement),
   }
 }
 
@@ -113,5 +141,22 @@ export function appendAgentMessage(state: InterviewState, text: string): Intervi
 }
 
 export function toggleConfirmation(state: InterviewState): InterviewState {
+  if (!state.requirement) return state
+  const ready = state.requirement.completitud === "suficiente_para_confirmar"
+  if (!state.confirmed && !ready) return state
   return { ...state, confirmed: !state.confirmed }
+}
+
+/** ¿El hilo ya trae decisión y período suficientes para cerrar delimitar? */
+export function scopeLooksReady(userTexts: string[]): boolean {
+  const text = userTexts.join(" \n ")
+  const hasPeriod =
+    /ultim[oa]s?\s+\d+|hace\s+\d+|meses|semanas|dias|trimestre|periodo|desde\s+hace|este a[nñ]o|este mes/i.test(
+      text,
+    )
+  const hasDecision =
+    /decidir|actu(?:ar|emos)|cambiar|revisar|ajust(?:ar|e)|tomar\s+medidas|entre .+ o |si .+ o /i.test(
+      text,
+    )
+  return hasPeriod && hasDecision
 }

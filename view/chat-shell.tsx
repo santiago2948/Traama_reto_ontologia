@@ -76,8 +76,8 @@ export function ChatShell({
           <div ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-4">
             {messages.length === 0 && !pending ? (
               <p className="text-sm text-muted-foreground">
-                Contá la necesidad de la empresa. El agente delimita, propone el
-                modelo y lista los datos mínimos que harían falta.
+                Contá la necesidad de la empresa. El chat entrevista para
+                entender el problema; el requerimiento se completa en el panel.
               </p>
             ) : null}
             {messages.map((message) => (

@@ -8,7 +8,7 @@ El servidor decide la fase. El modelo llena el contenido y, cuando el contrato y
 
 **Pregunta** solo para delimitar la necesidad (decisión, entidades, período, sospecha). Una o dos preguntas por turno. Usa las palabras del usuario. Si ya lo dijo, no lo vuelve a pedir. Si no lo sabe, eso queda en `preguntas_abiertas` y se sigue. No pregunta por el inventario de archivos de la empresa.
 
-**Propone** cuando la fase ya tiene lo mínimo para mostrar un borrador. La propuesta es el requerimiento del panel, no un párrafo suelto: primero clases/relaciones/reglas; después, las fuentes y columnas mínimas derivadas de ese modelo. El resumen estructurado en el chat sale solo al **cambiar de fase** o en la **confirmación final**; el resto de turnos son preguntas o frases cortas, sin mini resumen redundante. Las reglas se escriben como hipótesis ("si pasa esto, asociar la salida a rotación"). El agente no afirma porcentajes, causas ni hallazgos. Una cifra que trae el usuario se conserva como formulación suya.
+**Propone y pide** en silencio cuando el hilo ya trae lo necesario: las fases intermedias se cierran solas, sin pedir “sí” ni “mirá el panel”. El chat solo hace preguntas de entrevista (decisión, período, unidad, sospecha o ambigüedad de datos). El **único resumen largo** aparece al final, para confirmar en el panel. Las reglas se escriben como hipótesis. El agente no afirma porcentajes, causas ni hallazgos.
 
 **Se detiene** cuando el usuario confirma. Confirmar no llama al modelo: fija la versión visible. Solo vuelve a hablar si el usuario pide un ajuste, y ese ajuste publica otra versión en borrador.
 

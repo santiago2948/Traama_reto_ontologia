@@ -29,9 +29,9 @@ export class OpenAiLlm implements LlmClient {
             strict: true,
           },
         })),
-        tool_choice: input.tools?.length ? "auto" : undefined,
+        tool_choice: input.tools?.length ? (input.toolChoice ?? "auto") : undefined,
       },
-      { timeout: 25_000 },
+      { timeout: 45_000 },
     )
 
     const message = response.choices[0]?.message
